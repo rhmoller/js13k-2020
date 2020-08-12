@@ -1,3 +1,4 @@
+/* eslint-disable */
 var VRButton = {
   createButton: function (renderer: any) {
     function showEnterVR(/*device*/) {
