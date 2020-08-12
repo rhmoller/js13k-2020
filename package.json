@@ -1,0 +1,30 @@
+{
+  "name": "js13k-2020",
+  "version": "0.0.1",
+  "description": "My entry for JS13K Games 2020",
+  "main": "index.js",
+  "scripts": {
+    "build": "webpack --mode=production",
+    "start": "webpack-dev-server",
+    "test": "jest"
+  },
+  "keywords": [],
+  "author": "Rene Hangstrup Møller",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/jest": "^26.0.9",
+    "html-webpack-plugin": "^4.3.0",
+    "jest": "^26.3.0",
+    "prettier": "^2.0.5",
+    "ts-jest": "^26.2.0",
+    "ts-loader": "^8.0.2",
+    "typescript": "^3.9.7",
+    "webpack": "^4.44.1",
+    "webpack-cli": "^3.3.12",
+    "webpack-dev-server": "^3.11.0",
+    "zip-webpack-plugin": "^3.0.0"
+  },
+  "dependencies": {
+    "three": "^0.107.0"
+  }
+}
