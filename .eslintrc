@@ -14,5 +14,8 @@
   ],
   "parserOptions": {
     "ecmaVersion": 2015
+  },
+  "rules": {
+    "@typescript-eslint/explicit-module-boundary-types": false
   }
 }
