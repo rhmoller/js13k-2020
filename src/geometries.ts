@@ -1,4 +1,6 @@
 import * as THREE from "three";
+import { Vector3 } from "three";
+import { extrude } from "./extrude";
 
 export function createPlane() {
   const geometry = new THREE.BufferGeometry();
@@ -35,24 +37,68 @@ export function createPlane() {
 }
 
 export function createCorridor() {
-  const shape = new THREE.Shape();
-  shape.moveTo(0, 0);
-  shape.lineTo(1.5, 0);
-  shape.lineTo(2.0, 0.5);
-  shape.lineTo(2.0, 2.5);
-  shape.lineTo(1.5, 3);
-  shape.lineTo(-1.5, 3);
-  shape.lineTo(-2.0, 2.5);
-  shape.lineTo(-2.0, 0.5);
-  shape.lineTo(-1.5, 0);
-  shape.lineTo(0, 0);
+  const shape = [
+    0,
+    0,
+    0,
 
-  const geometry = new THREE.ExtrudeBufferGeometry(shape, {
-    steps: 2,
-    depth: 10,
-    bevelEnabled: false,
-  });
+    1.5,
+    0,
+    0,
 
+    2.0,
+    0.5,
+    0,
+
+    2.0,
+    2.5,
+    0,
+
+    1.5,
+    3,
+    0,
+
+    -1.5,
+    3,
+    0,
+
+    -2.0,
+    2.5,
+    0,
+
+    -2.0,
+    0.5,
+    0,
+
+    -1.5,
+    0,
+    0,
+
+    0,
+    0,
+    0,
+  ];
+
+  const geometry = extrudeGeometry(shape, 20);
+
+  return geometry;
+}
+
+export function createPillar() {
+  // prettier-ignore
+  const shape = [
+    0.25, 3, 0, 
+    1.5, 2.75, 0, 
+
+    1.75, 2.5-0.125, 0,     
+    1.75, 1.25, 0,     
+    1.5, 1, 0,     
+
+    1.5, 0.5, 0,     
+    1, 0, 0,     
+    2.0, 0, 0,
+    2.0, 3, 0];
+  const geometry = extrudeGeometry(shape, 0.25, false, true);
   return geometry;
 }
 
@@ -91,4 +137,15 @@ export function createControllerModel(side: "left" | "right") {
   hand.rotation.y = -Math.PI / 2;
   hand.castShadow = true;
   return hand;
+}
+
+export function extrudeGeometry(shape: number[], depth: number, close?: boolean, cap?: boolean) {
+  const data = extrude(shape, [0, 0, depth], close, cap);
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setIndex(data.indices);
+  geometry.setAttribute("position", new THREE.BufferAttribute(new Float32Array(data.vertices), 3));
+  geometry.setAttribute("normal", new THREE.BufferAttribute(new Float32Array(data.normals), 3));
+
+  return geometry;
 }

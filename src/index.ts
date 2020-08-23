@@ -1,7 +1,14 @@
 import * as THREE from "three";
 import { VRButton } from "./VRButton"; // this seems to be missing in https://js13kgames.com/webxr-src/2020/three.js
-import { createPlane, createCorridor, createHand, createControllerModel } from "./geometries";
-import { Vector2, Vector3 } from "three";
+import {
+  createPlane,
+  createCorridor,
+  createHand,
+  createControllerModel,
+  extrudeGeometry,
+  createPillar,
+} from "./geometries";
+import { Scene, TextGeometry, Vector2, Vector3 } from "three";
 import { initRenderer, renderScene } from "./renderer";
 
 const renderer = initRenderer();
@@ -10,27 +17,68 @@ const hubs = createHubs(scene);
 
 function createScene() {
   const scene = new THREE.Scene();
+  scene.fog = new THREE.FogExp2(0x334499, 0.25);
+  scene.background = new THREE.Color(0x334499);
 
   const geometry = new THREE.BoxGeometry();
   const material = new THREE.MeshLambertMaterial({ color: 0xff6633 });
   const cube = new THREE.Mesh(geometry, material);
-  cube.position.z = -4;
+  cube.position.z = -5;
   cube.position.y = 1;
   cube.castShadow = true;
+  cube.name = "cube";
   scene.add(cube);
+
+  const testMaterial = new THREE.MeshLambertMaterial({ color: 0xff36633, side: THREE.DoubleSide });
+  const testGeometry = extrudeGeometry(
+    [0, 0, -0.5, 1, 0, -0.5, 1, 1, -0.5, 0, 1, -0.5],
+    1,
+    true,
+    true
+  );
+  const test = new THREE.Mesh(testGeometry, testMaterial);
+  test.castShadow = true;
+
+  test.position.z = -3;
+  test.position.y = 1;
+  scene.add(test);
+  test.name = "rotateme";
 
   const corridorGeometry = createCorridor();
   const corridorMaterial = new THREE.MeshLambertMaterial({ color: 0xcccccc, side: THREE.BackSide });
 
   const corridor = new THREE.Mesh(corridorGeometry, corridorMaterial);
   scene.add(corridor);
-  corridor.position.z = -5;
+  corridor.position.z = -15;
   corridor.receiveShadow = true;
 
-  scene.add(new THREE.HemisphereLight(0x606080, 0x404060));
+  const pillarGeometry = createPillar();
+  const pillarMaterial = new THREE.MeshLambertMaterial({ color: 0xff66c33 });
 
-  const light = new THREE.DirectionalLight(0xffffff);
-  light.position.set(0.1, 1, 0.1).normalize();
+  for (let z = -15; z < -15 + 20; z += 5) {
+    const pillar = new THREE.Mesh(pillarGeometry, pillarMaterial);
+    pillar.position.set(0, 0, z);
+    scene.add(pillar);
+
+    const pillar2 = new THREE.Mesh(pillarGeometry, pillarMaterial);
+    pillar2.scale.set(-1, 1, 1);
+    pillar2.position.set(0, 0, z);
+    scene.add(pillar2);
+  }
+
+  const pillar = new THREE.Mesh(pillarGeometry, pillarMaterial);
+  pillar.position.set(0, 0, 4.75);
+  scene.add(pillar);
+
+  const pillar2 = new THREE.Mesh(pillarGeometry, pillarMaterial);
+  pillar2.scale.set(-1, 1, 1);
+  pillar2.position.set(0, 0, 4.75);
+  scene.add(pillar2);
+
+  scene.add(new THREE.HemisphereLight(0x888833, 0x333366, 0.3));
+
+  const light = new THREE.DirectionalLight(0xffffff, 0.75);
+  light.position.set(0.1, 2, 0.1).normalize();
   light.castShadow = true;
   light.shadow.mapSize.set(1024, 1024);
   scene.add(light);
@@ -100,8 +148,14 @@ const rotRay = new THREE.Vector3();
 const raycaster = new THREE.Raycaster();
 
 renderer.setAnimationLoop(() => {
-  //cube.rotation.x += 0.01;
-  //cube.rotation.y += 0.01;
+  const damesh = scene.getObjectByName("rotateme")!;
+  damesh.rotation.x += 0.023;
+  damesh.rotation.y += 0.015;
+
+  const cube = scene.getObjectByName("cube")!;
+  cube.rotation.z += 0.02;
+  cube.rotation.y += 0.03;
+
   renderScene(scene);
 
   const closestHub = findClosestHub(controller1Grip.position, hubs);
