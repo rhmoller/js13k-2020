@@ -7,17 +7,18 @@ import {
   createControllerModel,
   extrudeGeometry,
   createPillar,
+  createDoorFrame,
 } from "./geometries";
-import { Scene, TextGeometry, Vector2, Vector3 } from "three";
+import { Camera, Scene, TextGeometry, Vector2, Vector3 } from "three";
 import { initRenderer, renderScene } from "./renderer";
 
-const renderer = initRenderer();
+const [renderer, camera] = initRenderer();
 const scene = createScene();
 const hubs = createHubs(scene);
 
 function createScene() {
   const scene = new THREE.Scene();
-  scene.fog = new THREE.FogExp2(0x334499, 0.25);
+  scene.fog = new THREE.FogExp2(0x334499, 0.125);
   scene.background = new THREE.Color(0x334499);
 
   const geometry = new THREE.BoxGeometry();
@@ -30,12 +31,11 @@ function createScene() {
   scene.add(cube);
 
   const testMaterial = new THREE.MeshLambertMaterial({ color: 0xff36633, side: THREE.DoubleSide });
-  const testGeometry = extrudeGeometry(
-    [0, 0, -0.5, 1, 0, -0.5, 1, 1, -0.5, 0, 1, -0.5],
-    1,
-    true,
-    true
-  );
+  const testGeometry = extrudeGeometry([0, 0, -0.5, 1, 0, -0.5, 1, 1, -0.5, 0, 1, -0.5], {
+    depth: 1,
+    cap: true,
+    close: true,
+  });
   const test = new THREE.Mesh(testGeometry, testMaterial);
   test.castShadow = true;
 
@@ -45,7 +45,10 @@ function createScene() {
   test.name = "rotateme";
 
   const corridorGeometry = createCorridor();
-  const corridorMaterial = new THREE.MeshLambertMaterial({ color: 0xcccccc, side: THREE.BackSide });
+  const corridorMaterial = new THREE.MeshLambertMaterial({
+    color: 0xcccccc,
+    side: THREE.BackSide,
+  });
 
   const corridor = new THREE.Mesh(corridorGeometry, corridorMaterial);
   scene.add(corridor);
@@ -54,6 +57,10 @@ function createScene() {
 
   const pillarGeometry = createPillar();
   const pillarMaterial = new THREE.MeshLambertMaterial({ color: 0xff66c33 });
+
+  const pointLight = new THREE.PointLight(0xffffff, 1, 5, 1);
+  pointLight.position.set(0, 2.75, -2);
+  //  scene.add(pointLight);
 
   for (let z = -15; z < -15 + 20; z += 5) {
     const pillar = new THREE.Mesh(pillarGeometry, pillarMaterial);
@@ -75,12 +82,19 @@ function createScene() {
   pillar2.position.set(0, 0, 4.75);
   scene.add(pillar2);
 
+  const doorFrameGeometry = createDoorFrame();
+  const doorFrame = new THREE.Mesh(doorFrameGeometry, corridorMaterial);
+  doorFrame.position.set(0, 0, 5);
+  //scene.add(doorFrame);
+
   scene.add(new THREE.HemisphereLight(0x888833, 0x333366, 0.3));
 
   const light = new THREE.DirectionalLight(0xffffff, 0.75);
   light.position.set(0.1, 2, 0.1).normalize();
   light.castShadow = true;
   light.shadow.mapSize.set(1024, 1024);
+  light.shadow.camera.near = 0.01;
+  light.shadow.camera.far = 5;
   scene.add(light);
 
   return scene;
@@ -155,6 +169,23 @@ renderer.setAnimationLoop(() => {
   const cube = scene.getObjectByName("cube")!;
   cube.rotation.z += 0.02;
   cube.rotation.y += 0.03;
+
+  const session = renderer.xr.getSession() as XRSession;
+  if (session) {
+    session.inputSources.forEach((source, idx) => {
+      if (source.gamepad) {
+        const controller = renderer.xr.getController(idx);
+        const handedness = source.handedness;
+        const buttons = source.gamepad.buttons.map((button) => button.value);
+        if (handedness === "left") {
+          const yAxis = source.gamepad.axes[3];
+          if (Math.abs(yAxis) > 0.2) {
+            camera.position.add(new THREE.Vector3(0, 0, yAxis));
+          }
+        }
+      }
+    });
+  }
 
   renderScene(scene);
 

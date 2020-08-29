@@ -79,7 +79,7 @@ export function createCorridor() {
     0,
   ];
 
-  const geometry = extrudeGeometry(shape, 20);
+  const geometry = extrudeGeometry(shape, { depth: 20 });
 
   return geometry;
 }
@@ -98,7 +98,26 @@ export function createPillar() {
     1, 0, 0,     
     2.0, 0, 0,
     2.0, 3, 0];
-  const geometry = extrudeGeometry(shape, 0.25, false, true);
+  const geometry = extrudeGeometry(shape, { depth: 0.25, cap: true });
+  return geometry;
+}
+
+export function createDoorFrame() {
+  // prettier-ignore
+  const vertices = [
+    -2, 0,
+    -1, 0,
+    -1, 3,
+    -2, 3
+  ];
+
+  const shape = new THREE.Shape();
+  shape.moveTo(vertices[0], vertices[1]);
+  for (let i = 2; i < vertices.length; i += 2) {
+    shape.lineTo(vertices[i], vertices[i + 1]);
+  }
+
+  const geometry = new THREE.ExtrudeBufferGeometry(shape, { depth: 0.25 });
   return geometry;
 }
 
@@ -139,8 +158,12 @@ export function createControllerModel(side: "left" | "right") {
   return hand;
 }
 
-export function extrudeGeometry(shape: number[], depth: number, close?: boolean, cap?: boolean) {
-  const data = extrude(shape, [0, 0, depth], close, cap);
+export function extrudeGeometry(
+  shape: number[],
+  options: { depth: number; close?: boolean; cap?: boolean; direction?: [number, number, number] }
+) {
+  const { depth, close, cap, direction } = options;
+  const data = extrude(shape, direction ? direction : [0, 0, depth], close, cap);
 
   const geometry = new THREE.BufferGeometry();
   geometry.setIndex(data.indices);
