@@ -4,7 +4,7 @@ import { VRButton } from "./VRButton"; // this seems to be missing in https://js
 let renderer: THREE.WebGLRenderer;
 let camera: THREE.Camera;
 
-export function initRenderer(): [THREE.WebGL1Renderer, THREE.Camera] {
+export function initRenderer(): [THREE.WebGLRenderer, THREE.Camera] {
   camera = new THREE.PerspectiveCamera(90, window.innerWidth / window.innerHeight, 0.1, 1000);
   camera.position.y = 1.75;
 
