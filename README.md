@@ -14,3 +14,5 @@ To build zip filed
 To run tests
 
     npm t
+
+Latest build is live at https://rhmoller.dev/app/js13k-2020/index.html

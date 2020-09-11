@@ -9,40 +9,224 @@ import {
   createPillar,
   createDoorFrame,
 } from "./geometries";
-import { Camera, Scene, TextGeometry, Vector2, Vector3 } from "three";
+import {
+  Camera,
+  RGIntegerFormat,
+  Scene,
+  TextGeometry,
+  Vector2,
+  Vector3,
+  WebGLRenderer,
+} from "three";
 import { initRenderer, renderScene } from "./renderer";
+import { Engine, Hand, initEngine } from "./engine";
+import {
+  createHubs,
+  createLaserBeams,
+  createTeleport,
+  createTeleportGuideline,
+  updateGuideline,
+  createDoor,
+  createTrigger,
+} from "./game";
 
-const [renderer, camera] = initRenderer();
-const scene = createScene();
-const hubs = createHubs(scene);
+const raycaster = new THREE.Raycaster();
 
-function createScene() {
-  const scene = new THREE.Scene();
-  scene.fog = new THREE.FogExp2(0x334499, 0.125);
-  scene.background = new THREE.Color(0x334499);
+const engine = initEngine();
+engine.left.grip.add(createControllerModel("left"));
+engine.right.grip.add(createControllerModel("right"));
+populateScene(engine.scene);
+const hubs = createHubs(engine.scene);
+const lineGeometry = createLaserBeams(engine.scene);
+const teleport = createTeleport(engine.scene);
+engine.rig.add(teleport);
+teleport.position.z = -4;
+teleport.position.y = 0;
+teleport.visible = false;
+const guideline = createTeleportGuideline();
+engine.rig.add(guideline);
 
-  const geometry = new THREE.BoxGeometry();
-  const material = new THREE.MeshLambertMaterial({ color: 0xff6633 });
-  const cube = new THREE.Mesh(geometry, material);
-  cube.position.z = -5;
-  cube.position.y = 1;
-  cube.castShadow = true;
-  cube.name = "cube";
-  scene.add(cube);
+const door = createDoor();
+door.group.position.setZ(-15);
+engine.scene.add(door.group);
 
-  const testMaterial = new THREE.MeshLambertMaterial({ color: 0xff36633, side: THREE.DoubleSide });
-  const testGeometry = extrudeGeometry([0, 0, -0.5, 1, 0, -0.5, 1, 1, -0.5, 0, 1, -0.5], {
-    depth: 1,
-    cap: true,
-    close: true,
-  });
-  const test = new THREE.Mesh(testGeometry, testMaterial);
-  test.castShadow = true;
+let teleporting = false;
+const trigger = createTrigger();
+trigger.position.set(0.5, 1.5, -10);
+engine.scene.add(trigger);
 
-  test.position.z = -3;
-  test.position.y = 1;
-  scene.add(test);
-  test.name = "rotateme";
+function update() {
+  handleHand(engine.left);
+  handleHand(engine.right);
+  updateGuideline(engine.camera, engine.renderer, guideline, teleport);
+  updateRay();
+
+  door.open = trigger.userData.activated;
+  if (door.open && door.value < 1) {
+    door.value += door.delta;
+  } else if (!door.open && door.value > 0) {
+    door.value -= door.delta;
+  }
+  door.leftDoor.position.setX(-1 - door.value);
+  door.rightDoor.position.setX(1 + door.value);
+
+  const session = engine.renderer.xr.getSession() as XRSession;
+  if (session) {
+    const dy = session.inputSources[0].gamepad?.axes[3] || 0;
+    const thumbstickActivated = Math.abs(dy) > 0.2;
+    if (teleporting) {
+      if (!thumbstickActivated) {
+        const worldPos = new THREE.Vector3();
+        teleport.getWorldPosition(worldPos);
+
+        (engine.rig as THREE.Group).position.copy(worldPos);
+        teleporting = false;
+
+        door.open = !door.open;
+      }
+    } else {
+      if (thumbstickActivated) {
+        teleporting = true;
+      }
+    }
+    teleport.visible = thumbstickActivated;
+    guideline.visible = thumbstickActivated;
+  }
+}
+
+engine.renderer.setAnimationLoop(() => {
+  update();
+  renderScene(engine.scene);
+});
+
+function handleHand(hand: Hand) {
+  const handPosition = new THREE.Vector3();
+  hand.grip.getWorldPosition(handPosition);
+  const closestHub = findClosestHub(handPosition, hubs);
+
+  if (closestHub && handPosition.distanceTo(closestHub.position) < 0.1) {
+    (closestHub.material as THREE.MeshLambertMaterial).emissive.setHex(0x008888);
+    if (hand.selecting) {
+      (closestHub.material as THREE.MeshLambertMaterial).emissive.setHex(0xff0000);
+      if (!hand.wasSelecting) {
+        hand.wasSelecting = true;
+        const startQuaternion = new THREE.Quaternion();
+        startQuaternion.copy(hand.grip.quaternion);
+        hand.grip.userData.startQuaternion = startQuaternion;
+
+        const hubStartQuaternion = new THREE.Quaternion();
+        hubStartQuaternion.copy(closestHub.quaternion);
+        hand.grip.userData.hubStartQuaternion = hubStartQuaternion;
+      }
+
+      const startQuaternion = new THREE.Quaternion();
+      startQuaternion.copy(hand.grip.userData.startQuaternion);
+
+      const hubStartQuaternion = new THREE.Quaternion();
+      hubStartQuaternion.copy(hand.grip.userData.hubStartQuaternion);
+
+      const currentQuaternion = new THREE.Quaternion();
+      currentQuaternion.copy(hand.grip.quaternion);
+
+      startQuaternion.inverse();
+
+      const tempQuaternion = new THREE.Quaternion();
+      tempQuaternion.copy(currentQuaternion);
+      tempQuaternion.multiply(startQuaternion);
+
+      tempQuaternion.multiply(hubStartQuaternion);
+
+      closestHub.setRotationFromQuaternion(tempQuaternion);
+    }
+  } else {
+    if (closestHub) {
+      (closestHub.material as THREE.MeshLambertMaterial).emissive.setHex(0x000000);
+    }
+    hand.wasSelecting = false;
+  }
+}
+
+function updateRay() {
+  const ray = new THREE.Ray(new THREE.Vector3(0.5, 1, 5), new THREE.Vector3(0, 0, -1));
+
+  let hub: THREE.Object3D | null = null;
+  raycaster.ray.origin.copy(ray.origin);
+  raycaster.ray.direction.copy(ray.direction);
+
+  lineGeometry.attributes.position.setXYZ(
+    0,
+    raycaster.ray.origin.x,
+    raycaster.ray.origin.y,
+    raycaster.ray.origin.z
+  );
+
+  let idx = 1;
+  trigger.userData.activated = false;
+
+  while (true) {
+    let drawLength = 50;
+
+    const otherHubs = hubs.filter((other) => other !== hub);
+    otherHubs.push(trigger);
+    const intersects = raycaster.intersectObjects(otherHubs);
+
+    if (intersects.length > 0) {
+      const point = intersects[0];
+      drawLength = point.distance;
+    } else {
+      drawLength = 50;
+    }
+
+    lineGeometry.attributes.position.setXYZ(
+      idx,
+      raycaster.ray.origin.x + raycaster.ray.direction.x * drawLength,
+      raycaster.ray.origin.y + raycaster.ray.direction.y * drawLength,
+      raycaster.ray.origin.z + raycaster.ray.direction.z * drawLength
+    );
+
+    idx++;
+
+    if (intersects.length > 0) {
+      if (intersects[0].object === trigger) {
+        trigger.userData.activated = true;
+        break;
+      }
+
+      const point = intersects[0];
+      raycaster.ray.origin.copy(point.point);
+
+      hub = point.object as any;
+      const normal = point.face?.normal.clone();
+      normal?.applyQuaternion(hub!.quaternion);
+      raycaster.ray.direction.reflect(normal!);
+    } else {
+      break;
+    }
+
+    if (intersects.length == 0 || idx > 10) break;
+  }
+
+  lineGeometry.setDrawRange(0, idx);
+  lineGeometry.attributes.position.needsUpdate = true;
+}
+
+function populateScene(scene: THREE.Scene) {
+  scene.fog = new THREE.FogExp2(0x223388, 0.1);
+  scene.background = new THREE.Color(0x223388);
+  scene.add(new THREE.HemisphereLight(0x888833, 0x333366, 0.3));
+  const light = new THREE.DirectionalLight(0xffffff, 0.75);
+  light.position.set(0, 4, 0.1).normalize();
+  light.castShadow = true;
+  light.shadow.mapSize.set(4096, 4096);
+  light.shadow.camera.near = -1;
+  light.shadow.camera.far = 5;
+  const d = 10;
+  light.shadow.camera.left = -d;
+  light.shadow.camera.right = d;
+  light.shadow.camera.top = d;
+  light.shadow.camera.bottom = -d;
+  scene.add(light);
+  //scene.add(new THREE.CameraHelper(light.shadow.camera));
 
   const corridorGeometry = createCorridor();
   const corridorMaterial = new THREE.MeshLambertMaterial({
@@ -51,16 +235,13 @@ function createScene() {
   });
 
   const corridor = new THREE.Mesh(corridorGeometry, corridorMaterial);
+  corridor.name = "Corridor";
   scene.add(corridor);
   corridor.position.z = -15;
   corridor.receiveShadow = true;
 
   const pillarGeometry = createPillar();
   const pillarMaterial = new THREE.MeshLambertMaterial({ color: 0xff66c33 });
-
-  const pointLight = new THREE.PointLight(0xffffff, 1, 5, 1);
-  pointLight.position.set(0, 2.75, -2);
-  //  scene.add(pointLight);
 
   for (let z = -15; z < -15 + 20; z += 5) {
     const pillar = new THREE.Mesh(pillarGeometry, pillarMaterial);
@@ -82,185 +263,8 @@ function createScene() {
   pillar2.position.set(0, 0, 4.75);
   scene.add(pillar2);
 
-  const doorFrameGeometry = createDoorFrame();
-  const doorFrame = new THREE.Mesh(doorFrameGeometry, corridorMaterial);
-  doorFrame.position.set(0, 0, 5);
-  //scene.add(doorFrame);
-
-  scene.add(new THREE.HemisphereLight(0x888833, 0x333366, 0.3));
-
-  const light = new THREE.DirectionalLight(0xffffff, 0.75);
-  light.position.set(0.1, 2, 0.1).normalize();
-  light.castShadow = true;
-  light.shadow.mapSize.set(1024, 1024);
-  light.shadow.camera.near = 0.01;
-  light.shadow.camera.far = 5;
-  scene.add(light);
-
   return scene;
 }
-
-function createHubs(scene: THREE.Scene) {
-  const hubPositions = [
-    new THREE.Vector3(-1, 1, -3),
-    new THREE.Vector3(1, 1.5, -2),
-    new THREE.Vector3(0.5, 1, -0.5),
-    new THREE.Vector3(0.0, 0.5, 0),
-    new THREE.Vector3(-0.5, 1, -0.5),
-  ];
-
-  const geometry = new THREE.BoxGeometry();
-
-  const hubs = hubPositions.map((pos) => {
-    const hubMaterial = new THREE.MeshLambertMaterial({ color: 0x333333 });
-    const hub = new THREE.Mesh(geometry, hubMaterial);
-    hub.position.copy(pos);
-    hub.scale.set(0.1, 0.1, 0.1);
-    scene.add(hub);
-    return hub;
-  });
-
-  return hubs;
-}
-
-// eslint-disable-next-line
-const controller1 = renderer.xr.getController(0);
-const controller2 = renderer.xr.getController(1);
-// eslint-disable-next-line
-controller2.addEventListener("connected", function (event) {});
-
-const controller1Grip = renderer.xr.getControllerGrip(0);
-controller1Grip.add(createControllerModel("right"));
-scene.add(controller1Grip);
-
-const controller2Grip = renderer.xr.getControllerGrip(1);
-controller2Grip.add(createControllerModel("left"));
-scene.add(controller2Grip);
-
-controller1.addEventListener("selectstart", () => {
-  controller1.userData.isSelecting = true;
-});
-7;
-
-controller1.addEventListener("selectend", () => {
-  controller1.userData.isSelecting = false;
-});
-
-const lineMaterial = new THREE.LineBasicMaterial({ color: 0xff0000 });
-const points: THREE.Vector3[] = [];
-points.push(new THREE.Vector3(-1, 1, -3));
-points.push(new THREE.Vector3(1, 1.5, -2));
-points.push(new THREE.Vector3(0.5, 1, -0.5));
-points.push(new THREE.Vector3(0.0, 0.5, 0));
-
-const lineGeometry = new THREE.BufferGeometry().setFromPoints(points);
-const line = new THREE.Line(lineGeometry, lineMaterial);
-scene.add(line);
-
-const ray = new THREE.Vector3(-0.5, -0.5, 0.5);
-const rotRay = new THREE.Vector3();
-const raycaster = new THREE.Raycaster();
-
-renderer.setAnimationLoop(() => {
-  const damesh = scene.getObjectByName("rotateme")!;
-  damesh.rotation.x += 0.023;
-  damesh.rotation.y += 0.015;
-
-  const cube = scene.getObjectByName("cube")!;
-  cube.rotation.z += 0.02;
-  cube.rotation.y += 0.03;
-
-  const session = renderer.xr.getSession() as XRSession;
-  if (session) {
-    session.inputSources.forEach((source, idx) => {
-      if (source.gamepad) {
-        const controller = renderer.xr.getController(idx);
-        const handedness = source.handedness;
-        const buttons = source.gamepad.buttons.map((button) => button.value);
-        if (handedness === "left") {
-          const yAxis = source.gamepad.axes[3];
-          if (Math.abs(yAxis) > 0.2) {
-            camera.position.add(new THREE.Vector3(0, 0, yAxis));
-          }
-        }
-      }
-    });
-  }
-
-  renderScene(scene);
-
-  const closestHub = findClosestHub(controller1Grip.position, hubs);
-  if (closestHub && controller1Grip.position.distanceTo(closestHub.position) < 0.1) {
-    (closestHub.material as THREE.MeshLambertMaterial).emissive.setHex(0x008888);
-    if (controller1.userData.isSelecting) {
-      if (!controller1.userData.wasSelecting) {
-        controller1.userData.wasSelecting = true;
-
-        const startQuaternion = new THREE.Quaternion();
-        startQuaternion.copy(controller1Grip.quaternion);
-        controller1.userData.startQuaternion = startQuaternion;
-
-        const hubStartQuaternion = new THREE.Quaternion();
-        hubStartQuaternion.copy(closestHub.quaternion);
-        controller1.userData.hubStartQuaternion = hubStartQuaternion;
-      }
-
-      const startQuaternion = new THREE.Quaternion();
-      startQuaternion.copy(controller1.userData.startQuaternion);
-
-      const hubStartQuaternion = new THREE.Quaternion();
-      hubStartQuaternion.copy(controller1.userData.hubStartQuaternion);
-
-      const currentQuaternion = new THREE.Quaternion();
-      currentQuaternion.copy(controller1Grip.quaternion);
-
-      startQuaternion.inverse();
-
-      const tempQuaternion = new THREE.Quaternion();
-      tempQuaternion.copy(currentQuaternion);
-      tempQuaternion.multiply(startQuaternion);
-
-      tempQuaternion.multiply(hubStartQuaternion);
-
-      closestHub.setRotationFromQuaternion(tempQuaternion);
-
-      if (closestHub) {
-        rotRay.copy(ray);
-        rotRay.applyQuaternion(tempQuaternion);
-
-        let rayLength = 3;
-
-        raycaster.ray.origin.set(0.5, 1, -0.5);
-        const direction = new THREE.Vector3();
-        direction.copy(rotRay);
-        direction.normalize();
-        raycaster.ray.direction.copy(direction);
-
-        const intersects = raycaster.intersectObjects(hubs);
-        if (intersects.length > 0) {
-          (closestHub.material as THREE.MeshLambertMaterial).emissive.setHex(0x009900);
-          rayLength = intersects[0].distance + 0.2;
-        } else {
-          (closestHub.material as THREE.MeshLambertMaterial).emissive.setHex(0x000000);
-        }
-
-        lineGeometry.attributes.position.setXYZ(
-          3,
-          0.5 + rotRay.x * rayLength,
-          1 + rotRay.y * rayLength,
-          -0.5 + rotRay.z * rayLength
-        );
-        lineGeometry.attributes.position.needsUpdate = true;
-      }
-    }
-  } else {
-    //(closestHub.material as THREE.MeshLambertMaterial).setHex(0x000000);
-  }
-
-  if (!controller1.userData.isSelecting) {
-    controller1.userData.wasSelecting = false;
-  }
-});
 
 function findClosestHub(position: THREE.Vector3, hubs: THREE.Mesh[]) {
   const closest: [THREE.Mesh | null, number] = [null, Number.MAX_VALUE];
