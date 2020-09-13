@@ -1,8 +1,240 @@
 import * as THREE from "three";
-import { BufferAttribute, BufferGeometry, Line, LineBasicMaterial, LineSegments } from "three";
+import { BufferAttribute, BufferGeometry, Line, LineBasicMaterial } from "three";
+import { Hand } from "./engine";
+import { createCorridor, createPillar } from "./geometries";
+
+const rooms: RoomConfig[] = [
+  {
+    dimensions: {
+      x: 4,
+      z: 4,
+    },
+    hubPositions: [],
+    pillarPositions: [],
+  },
+];
+
+interface RoomConfig {
+  dimensions: {
+    x: number;
+    z: number;
+  };
+  hubPositions: number[];
+  pillarPositions: number[];
+}
+
+interface Door {
+  open: boolean;
+  delta: number;
+  value: number;
+  group: THREE.Group;
+  leftDoor: THREE.Mesh;
+  rightDoor: THREE.Mesh;
+}
+
+interface Room {
+  door: Door;
+  hubs: THREE.Mesh[];
+  obstacles: THREE.Mesh[];
+  //exit: THREE.Mesh;
+  //floor: THREE.Mesh[];
+  trigger: THREE.Mesh;
+  //room: THREE.Group;
+}
+
+export function handleHand(hand: Hand, room: Room) {
+  const { hubs } = room;
+
+  const handPosition = new THREE.Vector3();
+  hand.grip.getWorldPosition(handPosition);
+  const mesh = hand.grip.children[0] as THREE.Mesh;
+  const closestHub = findClosestHub(handPosition, mesh, hubs);
+
+  if (closestHub) {
+    if (hand.selecting) {
+      if (!hand.wasSelecting) {
+        hand.wasSelecting = true;
+        const startQuaternion = new THREE.Quaternion();
+        startQuaternion.copy(hand.grip.quaternion);
+        hand.grip.userData.startQuaternion = startQuaternion;
+
+        const hubStartQuaternion = new THREE.Quaternion();
+        hubStartQuaternion.copy(closestHub.quaternion);
+        hand.grip.userData.hubStartQuaternion = hubStartQuaternion;
+      }
+
+      const startQuaternion = new THREE.Quaternion();
+      startQuaternion.copy(hand.grip.userData.startQuaternion);
+
+      const hubStartQuaternion = new THREE.Quaternion();
+      hubStartQuaternion.copy(hand.grip.userData.hubStartQuaternion);
+
+      const currentQuaternion = new THREE.Quaternion();
+      currentQuaternion.copy(hand.grip.quaternion);
+
+      startQuaternion.inverse();
+
+      const tempQuaternion = new THREE.Quaternion();
+      tempQuaternion.copy(currentQuaternion);
+      tempQuaternion.multiply(startQuaternion);
+
+      tempQuaternion.multiply(hubStartQuaternion);
+
+      closestHub.setRotationFromQuaternion(tempQuaternion);
+    }
+  } else {
+    hand.wasSelecting = false;
+  }
+}
+
+function findClosestHub(position: THREE.Vector3, hand: THREE.Mesh, hubs: THREE.Mesh[]) {
+  const closest: [THREE.Mesh | null, number] = [null, Number.MAX_VALUE];
+  hubs.forEach((hub) => {
+    const box1 = hand.geometry.boundingBox!.clone();
+    box1?.applyMatrix4(hand.matrixWorld);
+    const box2 = hub.geometry.boundingBox!.clone();
+    box2?.applyMatrix4(hub.matrixWorld);
+    const intersects = box1?.intersectsBox(box2);
+    const dist = position.distanceTo(hub.position);
+    if (intersects && dist < closest[1]) {
+      closest[0] = hub;
+      closest[1] = dist;
+    }
+  });
+  return closest[0];
+}
+
+const raycaster = new THREE.Raycaster();
+
+export function updateRay(room: Room, lineGeometry: BufferGeometry) {
+  const { trigger, hubs } = room;
+  const ray = new THREE.Ray(new THREE.Vector3(0.5, 1, 5), new THREE.Vector3(0, 0, -1));
+
+  let hub: THREE.Object3D | null = null;
+  raycaster.ray.origin.copy(ray.origin);
+  raycaster.ray.direction.copy(ray.direction);
+
+  lineGeometry.attributes.position.setXYZ(
+    0,
+    raycaster.ray.origin.x,
+    raycaster.ray.origin.y,
+    raycaster.ray.origin.z
+  );
+
+  let idx = 1;
+  trigger.userData.activated = false;
+
+  while (true) {
+    let drawLength = 50;
+
+    const otherHubs = hubs.filter((other) => other !== hub);
+    otherHubs.push(trigger);
+    const intersects = raycaster.intersectObjects(otherHubs);
+
+    if (intersects.length > 0) {
+      const point = intersects[0];
+      drawLength = point.distance;
+    } else {
+      drawLength = 50;
+    }
+
+    lineGeometry.attributes.position.setXYZ(
+      idx,
+      raycaster.ray.origin.x + raycaster.ray.direction.x * drawLength,
+      raycaster.ray.origin.y + raycaster.ray.direction.y * drawLength,
+      raycaster.ray.origin.z + raycaster.ray.direction.z * drawLength
+    );
+
+    idx++;
+
+    if (intersects.length > 0) {
+      if (intersects[0].object === trigger) {
+        trigger.userData.activated = true;
+        break;
+      }
+
+      const point = intersects[0];
+      raycaster.ray.origin.copy(point.point);
+
+      hub = point.object as any;
+      const normal = point.face?.normal.clone();
+      normal?.applyQuaternion(hub!.quaternion);
+      raycaster.ray.direction.reflect(normal!);
+    } else {
+      break;
+    }
+
+    if (intersects.length == 0 || idx > 10) break;
+  }
+
+  lineGeometry.setDrawRange(0, idx);
+  lineGeometry.attributes.position.needsUpdate = true;
+}
+
+export function createRoom(scene: THREE.Scene) {
+  const corridorGeometry = createCorridor();
+  const corridorMaterial = new THREE.MeshLambertMaterial({
+    color: 0xcccccc,
+    side: THREE.BackSide,
+  });
+
+  const corridor = new THREE.Mesh(corridorGeometry, corridorMaterial);
+  corridor.name = "Corridor";
+  scene.add(corridor);
+  corridor.position.z = -15;
+  corridor.receiveShadow = true;
+
+  const pillarGeometry = createPillar();
+  const pillarMaterial = new THREE.MeshLambertMaterial({ color: 0xff66c33 });
+
+  const obstacles: THREE.Mesh[] = [];
+
+  for (let z = -15; z < -15 + 20; z += 5) {
+    const pillar = new THREE.Mesh(pillarGeometry, pillarMaterial);
+    pillar.position.set(0, 0, z);
+    scene.add(pillar);
+    obstacles.push(pillar);
+
+    const pillar2 = new THREE.Mesh(pillarGeometry, pillarMaterial);
+    pillar2.scale.set(-1, 1, 1);
+    pillar2.position.set(0, 0, z);
+    scene.add(pillar2);
+    obstacles.push(pillar2);
+  }
+
+  const pillar = new THREE.Mesh(pillarGeometry, pillarMaterial);
+  pillar.position.set(0, 0, 4.75);
+  scene.add(pillar);
+  obstacles.push(pillar);
+
+  const pillar2 = new THREE.Mesh(pillarGeometry, pillarMaterial);
+  pillar2.scale.set(-1, 1, 1);
+  pillar2.position.set(0, 0, 4.75);
+  scene.add(pillar2);
+  obstacles.push(pillar2);
+
+  const door = createDoor();
+  door.group.position.setZ(-15);
+  scene.add(door.group);
+
+  const trigger = createTrigger();
+  trigger.position.set(0.5, 1.5, -10);
+  scene.add(trigger);
+
+  const hubs = createHubs(scene);
+
+  const room = {
+    obstacles,
+    trigger,
+    door,
+    hubs,
+  };
+
+  return room;
+}
 
 export function createLaserBeams(scene: THREE.Scene) {
-  const lineMaterial = new THREE.LineBasicMaterial({ color: 0xff00ff });
+  const lineMaterial = new THREE.LineBasicMaterial({ color: 0xff0000 });
   lineMaterial.linewidth = 3;
   const positions = new Float32Array(10 * 3);
   const lineGeometry = new THREE.BufferGeometry();
@@ -17,8 +249,8 @@ export function createLaserBeams(scene: THREE.Scene) {
 export function createHubs(scene: THREE.Scene) {
   const hubPositions = [
     new THREE.Vector3(0.5, 1, -0.5),
-    new THREE.Vector3(-0.5, 1, -0.5),
-    new THREE.Vector3(0.3, 1.5, -0.2),
+    new THREE.Vector3(-0.5, 1, -1.5),
+    new THREE.Vector3(0.3, 1.5, -3.2),
   ];
 
   const geometry = new THREE.BoxGeometry(0.02, 0.25, 0.25);
