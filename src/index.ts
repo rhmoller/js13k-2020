@@ -11,15 +11,53 @@ import {
   updateGuideline,
   updateRay,
   createRoom,
-  handleLevelUpdate,
+  isLevelCompleted,
+  RoomConfig,
 } from "./game";
 
 const engine = initEngine();
 engine.left.grip.add(createControllerModel("left"));
 engine.right.grip.add(createControllerModel("right"));
 
+let currentRoom = 0;
+const rooms: RoomConfig[] = [
+  {
+    dimensions: {
+      x: 4,
+      z: 10,
+    },
+    // prettier-ignore
+    hubPositions: [
+      0.5, 1, -0.5,
+      -0.5, 1, -1.5,
+      0.3, 1.5, -3.2,  
+    ],
+    pillarPositions: [],
+    beam: {
+      origin: new THREE.Vector3(-0.5, 1, 5),
+    },
+  },
+  {
+    dimensions: {
+      x: 10,
+      z: 10,
+    },
+    // prettier-ignore
+    hubPositions: [
+      0.5, 1, -0.5,
+      -0.5, 1, -1.5,
+      0.3, 1.5, -3.2,  
+    ],
+    pillarPositions: [],
+    beam: {
+      origin: new THREE.Vector3(),
+    },
+  },
+];
+
 configureEnvironment(engine.scene);
-const room = createRoom(engine.scene, engine);
+let room = createRoom(engine.scene, engine, rooms[currentRoom]);
+engine.scene.add(room.group);
 const lineGeometry = createLaserBeams(engine.scene);
 
 const teleport = createTeleport(engine.scene);
@@ -41,7 +79,7 @@ function update() {
   handleHand(engine.left, room);
   handleHand(engine.right, room);
   updateGuideline(engine.camera, engine.renderer, guideline, teleport);
-  updateRay(room, lineGeometry);
+  updateRay(room, rooms[currentRoom], lineGeometry);
 
   const { door, trigger } = room;
 
@@ -81,7 +119,12 @@ function update() {
     guideline.visible = thumbstickActivated;
   }
 
-  handleLevelUpdate(engine);
+  if (isLevelCompleted(engine, rooms[currentRoom])) {
+    currentRoom++;
+    engine.scene.remove(room.group);
+    room = createRoom(engine.scene, engine, rooms[currentRoom]);
+    engine.scene.add(room.group);
+  }
 }
 
 engine.renderer.setAnimationLoop(() => {

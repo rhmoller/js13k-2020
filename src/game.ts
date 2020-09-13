@@ -1,15 +1,19 @@
 import * as THREE from "three";
 import { BufferAttribute, BufferGeometry, Line, LineBasicMaterial } from "three";
+import { compilation } from "webpack";
 import { Engine, Hand } from "./engine";
 import { createCorridor, createPillar } from "./geometries";
 
-interface RoomConfig {
+export interface RoomConfig {
   dimensions: {
     x: number;
     z: number;
   };
   hubPositions: number[];
   pillarPositions: number[];
+  beam: {
+    origin: THREE.Vector3;
+  };
 }
 
 interface Door {
@@ -95,9 +99,15 @@ function findClosestHub(position: THREE.Vector3, hand: THREE.Mesh, hubs: THREE.M
 
 const raycaster = new THREE.Raycaster();
 
-export function updateRay(room: Room, lineGeometry: BufferGeometry) {
+export function updateRay(room: Room, roomConfig: RoomConfig, lineGeometry: BufferGeometry) {
   const { trigger, hubs } = room;
-  const ray = new THREE.Ray(new THREE.Vector3(0.5, 1, 5), new THREE.Vector3(0, 0, -1));
+  const startDirection = new THREE.Vector3(
+    roomConfig.hubPositions[0],
+    roomConfig.hubPositions[1],
+    roomConfig.hubPositions[2]
+  );
+  startDirection.addScaledVector(roomConfig.beam.origin, -1).normalize();
+  const ray = new THREE.Ray(roomConfig.beam.origin, startDirection);
 
   let hub: THREE.Object3D | null = null;
   raycaster.ray.origin.copy(ray.origin);
@@ -160,33 +170,16 @@ export function updateRay(room: Room, lineGeometry: BufferGeometry) {
   lineGeometry.attributes.position.needsUpdate = true;
 }
 
-const rooms: RoomConfig[] = [
-  {
-    dimensions: {
-      x: 4,
-      z: 10,
-    },
-    // prettier-ignore
-    hubPositions: [
-      0.5, 1, -0.5,
-      -0.5, 1, -1.5,
-      0.3, 1.5, -3.2,  
-    ],
-    pillarPositions: [],
-  },
-];
+let currentRoom = 0;
 
-export function handleLevelUpdate(engine: Engine) {
+export function isLevelCompleted(engine: Engine, config: RoomConfig) {
   const { rig } = engine;
-  const config = rooms[0];
   const hd = config.dimensions.z / 2;
-  if (rig.position.z < -hd) {
-    engine.rig.position.set(0, engine.rig.position.y, hd - 1);
-  }
+  return rig.position.z < -hd;
 }
 
-export function createRoom(scene: THREE.Scene, engine: Engine) {
-  const config = rooms[0];
+export function createRoom(scene: THREE.Scene, engine: Engine, config: RoomConfig) {
+  const group = new THREE.Group();
 
   const corridorGeometry = createCorridor(config.dimensions.x, config.dimensions.z);
   const corridorMaterial = new THREE.MeshLambertMaterial({
@@ -194,9 +187,26 @@ export function createRoom(scene: THREE.Scene, engine: Engine) {
     side: THREE.BackSide,
   });
 
+  const hw = config.dimensions.x / 2;
+  const hd = config.dimensions.z / 2;
+
+  const wallMaterial = new THREE.MeshLambertMaterial({
+    color: 0xcccccc,
+  });
+  const startWall = new THREE.Mesh(
+    new THREE.BoxGeometry(config.dimensions.x, 3, 0.125),
+    wallMaterial
+  );
+  const leftWall = new THREE.Mesh(new THREE.BoxGeometry(hw - 1, 3, 0.15), wallMaterial);
+  const rightWall = new THREE.Mesh(new THREE.BoxGeometry(hw - 1, 3, 0.15), wallMaterial);
+
+  group.add(startWall);
+  group.add(leftWall);
+  group.add(rightWall);
+
   const corridor = new THREE.Mesh(corridorGeometry, corridorMaterial);
   corridor.name = "Corridor";
-  scene.add(corridor);
+  group.add(corridor);
   corridor.receiveShadow = true;
 
   const pillarGeometry = createPillar();
@@ -204,43 +214,43 @@ export function createRoom(scene: THREE.Scene, engine: Engine) {
 
   const obstacles: THREE.Mesh[] = [];
 
-  const hw = config.dimensions.x / 2;
-  const hd = config.dimensions.z / 2;
+  startWall.position.set(0, 1.5, hd);
+  leftWall.position.set(-hw / 2 - 1, 1.5, -hd);
+  rightWall.position.set(hw / 2 + 1, 1.5, -hd);
 
   engine.rig.position.set(0, engine.rig.position.y, hd - 1);
 
   for (let z = -hd; z <= hd; z += 5) {
     const pillar = new THREE.Mesh(pillarGeometry, pillarMaterial);
     pillar.position.set(hw - 2, 0, z - 0.125);
-    scene.add(pillar);
+    group.add(pillar);
     obstacles.push(pillar);
 
     const pillar2 = new THREE.Mesh(pillarGeometry, pillarMaterial);
     pillar2.scale.set(-1, 1, 1);
     pillar2.position.set(2 - hw, 0, z - 0.125);
-    scene.add(pillar2);
+    group.add(pillar2);
     obstacles.push(pillar2);
   }
 
   const door = createDoor();
   door.group.position.setZ(-hd);
-  scene.add(door.group);
+  group.add(door.group);
 
   const [base, trigger] = createTrigger();
   base.position.set(-1, 0.5, 1 - hd);
   trigger.position.set(-1, 1.125, 1 - hd);
-  scene.add(base);
-  scene.add(trigger);
+  group.add(base);
+  group.add(trigger);
 
-  const baseGeometry = new THREE.BoxGeometry();
-
-  const hubs = createHubs(scene, config.hubPositions);
+  const hubs = createHubs(group, config.hubPositions);
 
   const room = {
     obstacles,
     trigger,
     door,
     hubs,
+    group,
   };
 
   return room;
@@ -259,7 +269,7 @@ export function createLaserBeams(scene: THREE.Scene) {
   return lineGeometry;
 }
 
-export function createHubs(scene: THREE.Scene, hubPositions: number[]) {
+export function createHubs(scene: THREE.Group, hubPositions: number[]) {
   const geometry = new THREE.BoxGeometry(0.02, 0.25, 0.25);
   geometry.computeBoundingBox();
 
