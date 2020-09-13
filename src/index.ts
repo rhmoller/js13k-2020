@@ -56,6 +56,7 @@ trigger.position.set(0.5, 1.5, -10);
 engine.scene.add(trigger);
 
 function update() {
+  hubs.forEach((hub) => (hub.material as THREE.MeshLambertMaterial).emissive.setHex(0x000000));
   handleHand(engine.left);
   handleHand(engine.right);
   updateGuideline(engine.camera, engine.renderer, guideline, teleport);
@@ -102,9 +103,10 @@ engine.renderer.setAnimationLoop(() => {
 function handleHand(hand: Hand) {
   const handPosition = new THREE.Vector3();
   hand.grip.getWorldPosition(handPosition);
-  const closestHub = findClosestHub(handPosition, hubs);
+  const mesh = hand.grip.children[0] as THREE.Mesh;
+  const closestHub = findClosestHub(handPosition, mesh, hubs);
 
-  if (closestHub && handPosition.distanceTo(closestHub.position) < 0.1) {
+  if (closestHub) {
     (closestHub.material as THREE.MeshLambertMaterial).emissive.setHex(0x008888);
     if (hand.selecting) {
       (closestHub.material as THREE.MeshLambertMaterial).emissive.setHex(0xff0000);
@@ -139,9 +141,6 @@ function handleHand(hand: Hand) {
       closestHub.setRotationFromQuaternion(tempQuaternion);
     }
   } else {
-    if (closestHub) {
-      (closestHub.material as THREE.MeshLambertMaterial).emissive.setHex(0x000000);
-    }
     hand.wasSelecting = false;
   }
 }
@@ -266,11 +265,16 @@ function populateScene(scene: THREE.Scene) {
   return scene;
 }
 
-function findClosestHub(position: THREE.Vector3, hubs: THREE.Mesh[]) {
+function findClosestHub(position: THREE.Vector3, hand: THREE.Mesh, hubs: THREE.Mesh[]) {
   const closest: [THREE.Mesh | null, number] = [null, Number.MAX_VALUE];
   hubs.forEach((hub) => {
+    const box1 = hand.geometry.boundingBox!.clone();
+    box1?.applyMatrix4(hand.matrixWorld);
+    const box2 = hub.geometry.boundingBox!.clone();
+    box2?.applyMatrix4(hub.matrixWorld);
+    const intersects = box1?.intersectsBox(box2);
     const dist = position.distanceTo(hub.position);
-    if (dist < closest[1]) {
+    if (intersects && dist < closest[1]) {
       closest[0] = hub;
       closest[1] = dist;
     }

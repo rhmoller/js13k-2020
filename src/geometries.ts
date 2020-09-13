@@ -148,6 +148,7 @@ export function createHand() {
 
 export function createControllerModel(side: "left" | "right") {
   const handGeometry = createHand();
+  handGeometry.computeBoundingBox();
   const handMaterial = new THREE.MeshLambertMaterial({ color: 0x666666 });
 
   const hand = new THREE.Mesh(handGeometry, handMaterial);
@@ -155,6 +156,7 @@ export function createControllerModel(side: "left" | "right") {
   hand.rotation.x = -0.75 * Math.PI;
   hand.rotation.y = -Math.PI / 2;
   hand.castShadow = true;
+  hand.name = "hand";
   return hand;
 }
 

@@ -22,6 +22,7 @@ export function createHubs(scene: THREE.Scene) {
   ];
 
   const geometry = new THREE.BoxGeometry(0.02, 0.25, 0.25);
+  geometry.computeBoundingBox();
 
   const hubs = hubPositions.map((pos) => {
     const hubMaterial = new THREE.MeshLambertMaterial({ color: 0x333333 });
