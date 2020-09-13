@@ -1,18 +1,7 @@
 import * as THREE from "three";
 import { BufferAttribute, BufferGeometry, Line, LineBasicMaterial } from "three";
-import { Hand } from "./engine";
+import { Engine, Hand } from "./engine";
 import { createCorridor, createPillar } from "./geometries";
-
-const rooms: RoomConfig[] = [
-  {
-    dimensions: {
-      x: 4,
-      z: 4,
-    },
-    hubPositions: [],
-    pillarPositions: [],
-  },
-];
 
 interface RoomConfig {
   dimensions: {
@@ -171,8 +160,35 @@ export function updateRay(room: Room, lineGeometry: BufferGeometry) {
   lineGeometry.attributes.position.needsUpdate = true;
 }
 
-export function createRoom(scene: THREE.Scene) {
-  const corridorGeometry = createCorridor();
+const rooms: RoomConfig[] = [
+  {
+    dimensions: {
+      x: 4,
+      z: 10,
+    },
+    // prettier-ignore
+    hubPositions: [
+      0.5, 1, -0.5,
+      -0.5, 1, -1.5,
+      0.3, 1.5, -3.2,  
+    ],
+    pillarPositions: [],
+  },
+];
+
+export function handleLevelUpdate(engine: Engine) {
+  const { rig } = engine;
+  const config = rooms[0];
+  const hd = config.dimensions.z / 2;
+  if (rig.position.z < -hd) {
+    engine.rig.position.set(0, engine.rig.position.y, hd - 1);
+  }
+}
+
+export function createRoom(scene: THREE.Scene, engine: Engine) {
+  const config = rooms[0];
+
+  const corridorGeometry = createCorridor(config.dimensions.x, config.dimensions.z);
   const corridorMaterial = new THREE.MeshLambertMaterial({
     color: 0xcccccc,
     side: THREE.BackSide,
@@ -181,7 +197,6 @@ export function createRoom(scene: THREE.Scene) {
   const corridor = new THREE.Mesh(corridorGeometry, corridorMaterial);
   corridor.name = "Corridor";
   scene.add(corridor);
-  corridor.position.z = -15;
   corridor.receiveShadow = true;
 
   const pillarGeometry = createPillar();
@@ -189,39 +204,37 @@ export function createRoom(scene: THREE.Scene) {
 
   const obstacles: THREE.Mesh[] = [];
 
-  for (let z = -15; z < -15 + 20; z += 5) {
+  const hw = config.dimensions.x / 2;
+  const hd = config.dimensions.z / 2;
+
+  engine.rig.position.set(0, engine.rig.position.y, hd - 1);
+
+  for (let z = -hd; z <= hd; z += 5) {
     const pillar = new THREE.Mesh(pillarGeometry, pillarMaterial);
-    pillar.position.set(0, 0, z);
+    pillar.position.set(hw - 2, 0, z - 0.125);
     scene.add(pillar);
     obstacles.push(pillar);
 
     const pillar2 = new THREE.Mesh(pillarGeometry, pillarMaterial);
     pillar2.scale.set(-1, 1, 1);
-    pillar2.position.set(0, 0, z);
+    pillar2.position.set(2 - hw, 0, z - 0.125);
     scene.add(pillar2);
     obstacles.push(pillar2);
   }
 
-  const pillar = new THREE.Mesh(pillarGeometry, pillarMaterial);
-  pillar.position.set(0, 0, 4.75);
-  scene.add(pillar);
-  obstacles.push(pillar);
-
-  const pillar2 = new THREE.Mesh(pillarGeometry, pillarMaterial);
-  pillar2.scale.set(-1, 1, 1);
-  pillar2.position.set(0, 0, 4.75);
-  scene.add(pillar2);
-  obstacles.push(pillar2);
-
   const door = createDoor();
-  door.group.position.setZ(-15);
+  door.group.position.setZ(-hd);
   scene.add(door.group);
 
-  const trigger = createTrigger();
-  trigger.position.set(0.5, 1.5, -10);
+  const [base, trigger] = createTrigger();
+  base.position.set(-1, 0.5, 1 - hd);
+  trigger.position.set(-1, 1.125, 1 - hd);
+  scene.add(base);
   scene.add(trigger);
 
-  const hubs = createHubs(scene);
+  const baseGeometry = new THREE.BoxGeometry();
+
+  const hubs = createHubs(scene, config.hubPositions);
 
   const room = {
     obstacles,
@@ -246,24 +259,24 @@ export function createLaserBeams(scene: THREE.Scene) {
   return lineGeometry;
 }
 
-export function createHubs(scene: THREE.Scene) {
-  const hubPositions = [
-    new THREE.Vector3(0.5, 1, -0.5),
-    new THREE.Vector3(-0.5, 1, -1.5),
-    new THREE.Vector3(0.3, 1.5, -3.2),
-  ];
-
+export function createHubs(scene: THREE.Scene, hubPositions: number[]) {
   const geometry = new THREE.BoxGeometry(0.02, 0.25, 0.25);
   geometry.computeBoundingBox();
 
-  const hubs = hubPositions.map((pos) => {
+  const hubs: THREE.Mesh[] = [];
+  for (let idx = 0; idx < hubPositions.length; idx += 3) {
     const hubMaterial = new THREE.MeshLambertMaterial({ color: 0x333333 });
     const hub = new THREE.Mesh(geometry, hubMaterial);
     hub.castShadow = true;
-    hub.position.copy(pos);
+    hub.position.set(hubPositions[idx], hubPositions[idx + 1], hubPositions[idx + 2]);
+    hub.rotation.set(
+      Math.random() * Math.PI * 2,
+      Math.random() * Math.PI * 2,
+      Math.random() * Math.PI * 2
+    );
     scene.add(hub);
-    return hub;
-  });
+    hubs.push(hub);
+  }
 
   return hubs;
 }
@@ -365,9 +378,14 @@ export function createDoor() {
   };
 }
 
-export function createTrigger() {
+export function createTrigger(): [THREE.Mesh, THREE.Mesh] {
   const box = new THREE.BoxGeometry(0.25, 0.25, 0.25);
   const material = new THREE.MeshLambertMaterial({ color: 0xff0000 });
   const trigger = new THREE.Mesh(box, material);
-  return trigger;
+
+  const baseBox = new THREE.BoxGeometry(0.25, 1, 0.25);
+  const baseMaterial = new THREE.MeshLambertMaterial({ color: 0xffffff });
+  const base = new THREE.Mesh(baseBox, baseMaterial);
+
+  return [base, trigger];
 }

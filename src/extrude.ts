@@ -57,7 +57,6 @@ export function extrude(
   }
 
   if (cap) {
-    console.log("capping");
     const shape: THREE.Vector2[] = [];
 
     const capNormal = new THREE.Vector3(...direction!).normalize();
@@ -83,18 +82,14 @@ export function extrude(
     shape.push(new THREE.Vector2(path[0], path[1]));
     vertices.push(path[0], path[1], path[2]);
 
-    console.log("bases", base, base2, vertices.length / 3);
-
     const cap1: number[][] = ShapeUtils.triangulateShape(shape, []);
     cap1.forEach((face) => {
-      console.log("face", face);
       indices.push(face[0] + base);
       indices.push(face[2] + base);
       indices.push(face[1] + base);
     });
 
     cap1.forEach((face) => {
-      console.log("face2", face);
       indices.push(face[0] + base2);
       indices.push(face[1] + base2);
       indices.push(face[2] + base2);

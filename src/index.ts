@@ -11,6 +11,7 @@ import {
   updateGuideline,
   updateRay,
   createRoom,
+  handleLevelUpdate,
 } from "./game";
 
 const engine = initEngine();
@@ -18,7 +19,7 @@ engine.left.grip.add(createControllerModel("left"));
 engine.right.grip.add(createControllerModel("right"));
 
 configureEnvironment(engine.scene);
-const room = createRoom(engine.scene);
+const room = createRoom(engine.scene, engine);
 const lineGeometry = createLaserBeams(engine.scene);
 
 const teleport = createTeleport(engine.scene);
@@ -31,7 +32,11 @@ engine.rig.add(guideline);
 
 let teleporting = false;
 
+let t = 0;
+
 function update() {
+  t++;
+
   //hubs.forEach((hub) => (hub.material as THREE.MeshLambertMaterial).emissive.setHex(0x000000));
   handleHand(engine.left, room);
   handleHand(engine.right, room);
@@ -41,6 +46,10 @@ function update() {
   const { door, trigger } = room;
 
   door.open = trigger.userData.activated;
+  let triggerIntensity = 128 + Math.sin(t * 0.15) * 127;
+  (trigger.material as THREE.MeshLambertMaterial).emissive.setHex(
+    trigger.userData.activated ? triggerIntensity << 8 : triggerIntensity << 16
+  );
   if (door.open && door.value < 1) {
     door.value += door.delta;
   } else if (!door.open && door.value > 0) {
@@ -71,6 +80,8 @@ function update() {
     teleport.visible = thumbstickActivated;
     guideline.visible = thumbstickActivated;
   }
+
+  handleLevelUpdate(engine);
 }
 
 engine.renderer.setAnimationLoop(() => {

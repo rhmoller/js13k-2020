@@ -35,50 +35,53 @@ export function createPlane() {
   return geometry;
 }
 
-export function createCorridor() {
+export function createCorridor(width: number, depth: number) {
+  const hw = width / 2;
+  const hd = depth / 2;
+
   const shape = [
     0,
     0,
-    0,
+    -hd,
 
-    1.5,
+    hw - 0.5,
     0,
-    0,
+    -hd,
 
-    2.0,
+    hw,
     0.5,
-    0,
+    -hd,
 
-    2.0,
+    hw,
     2.5,
-    0,
+    -hd,
 
-    1.5,
+    hw - 0.5,
     3,
-    0,
+    -hd,
 
-    -1.5,
+    -hw + 0.5,
     3,
-    0,
+    -hd,
 
-    -2.0,
+    -hw,
     2.5,
-    0,
+    -hd,
 
-    -2.0,
+    -hw,
     0.5,
-    0,
+    -hd,
 
-    -1.5,
+    -hw + 0.5,
     0,
-    0,
+    -hd,
 
     0,
     0,
-    0,
+    -hd,
   ];
 
-  const geometry = extrudeGeometry(shape, { depth: 20 });
+  const geometry = extrudeGeometry(shape, { depth });
 
   return geometry;
 }
