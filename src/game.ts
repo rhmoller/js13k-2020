@@ -126,8 +126,8 @@ export function updateRay(room: Room, roomConfig: RoomConfig, lineGeometry: Buff
   while (true) {
     let drawLength = 50;
 
-    const otherHubs = hubs.filter((other) => other !== hub);
-    otherHubs.push(trigger);
+    let otherHubs = hubs.filter((other) => other !== hub);
+    otherHubs = [...otherHubs, ...room.obstacles, trigger];
     const intersects = raycaster.intersectObjects(otherHubs);
 
     if (intersects.length > 0) {
@@ -149,6 +149,8 @@ export function updateRay(room: Room, roomConfig: RoomConfig, lineGeometry: Buff
     if (intersects.length > 0) {
       if (intersects[0].object === trigger) {
         trigger.userData.activated = true;
+        break;
+      } else if (intersects[0].object.userData.obstacle == true) {
         break;
       }
 
@@ -224,13 +226,24 @@ export function createRoom(scene: THREE.Scene, engine: Engine, config: RoomConfi
     const pillar = new THREE.Mesh(pillarGeometry, pillarMaterial);
     pillar.position.set(hw - 2, 0, z - 0.125);
     group.add(pillar);
+    pillar.userData.obstacle = true;
     obstacles.push(pillar);
 
     const pillar2 = new THREE.Mesh(pillarGeometry, pillarMaterial);
     pillar2.scale.set(-1, 1, 1);
     pillar2.position.set(2 - hw, 0, z - 0.125);
+    pillar2.userData.obstacle = true;
     group.add(pillar2);
     obstacles.push(pillar2);
+  }
+
+  const pillar2Geometry = new THREE.BoxGeometry(2, 3, 2);
+  for (let i = 0; i < config.pillarPositions.length; i += 2) {
+    const pillar = new THREE.Mesh(pillar2Geometry, pillarMaterial);
+    pillar.position.set(config.pillarPositions[i], 1.5, config.pillarPositions[i + 1]);
+    group.add(pillar);
+    pillar.userData.obstacle = true;
+    obstacles.push(pillar);
   }
 
   const door = createDoor();

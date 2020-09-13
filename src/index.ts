@@ -19,38 +19,65 @@ const engine = initEngine();
 engine.left.grip.add(createControllerModel("left"));
 engine.right.grip.add(createControllerModel("right"));
 
-let currentRoom = 0;
+let currentRoom = 2;
 const rooms: RoomConfig[] = [
   {
     dimensions: {
       x: 4,
-      z: 10,
+      z: 5,
     },
     // prettier-ignore
     hubPositions: [
       0.5, 1, -0.5,
       -0.5, 1, -1.5,
-      0.3, 1.5, -3.2,  
     ],
     pillarPositions: [],
     beam: {
-      origin: new THREE.Vector3(-0.5, 1, 5),
+      origin: new THREE.Vector3(-1.5, 2.5, 2.5),
     },
   },
   {
     dimensions: {
       x: 10,
-      z: 10,
+      z: 8,
     },
     // prettier-ignore
     hubPositions: [
-      0.5, 1, -0.5,
-      -0.5, 1, -1.5,
-      0.3, 1.5, -3.2,  
+      -1, 1, 1,
+      2, 1, -1,
+      -0.5, 1.5, -3,  
+      1, 1.5, -3,  
     ],
-    pillarPositions: [],
+    // prettier-ignore
+    pillarPositions: [
+      2.5, -3,
+      2.5, 3,
+      -2.5, -3,
+      -2.5, 3
+    ],
     beam: {
-      origin: new THREE.Vector3(),
+      origin: new THREE.Vector3(-5, 3, -2),
+    },
+  },
+  {
+    dimensions: {
+      x: 6,
+      z: 5,
+    },
+    // prettier-ignore
+    hubPositions: [
+      1, 1, 1,
+      -0.5, 1.5, -3,  
+      1, 1.5, -3,  
+    ],
+    // prettier-ignore
+    pillarPositions: [
+      -2.5, -2,
+      2.5, -0,
+      -2.5, 2
+    ],
+    beam: {
+      origin: new THREE.Vector3(0, 1, 2.5),
     },
   },
 ];
@@ -121,6 +148,7 @@ function update() {
 
   if (isLevelCompleted(engine, rooms[currentRoom])) {
     currentRoom++;
+    if (currentRoom == rooms.length) currentRoom = 0;
     engine.scene.remove(room.group);
     room = createRoom(engine.scene, engine, rooms[currentRoom]);
     engine.scene.add(room.group);
