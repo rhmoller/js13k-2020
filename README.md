@@ -7,7 +7,7 @@ To install and run development server
     npm i
     npm start
 
-To build zip filed
+To build zip file
 
     npm run build
 
